@@ -4,7 +4,7 @@ bl_info = {
     "category": "Object",
     "author": "Stanislav Kolesnikov",
     "version": (1, 1, 0),
-    "description": "Automatically applies scale after confirming a scale transformation with left mouse click via a checkbox toggle. Starts enabled by default.",
+    "description": "Automatically applies scale after confirming a scale transformation with left mouse click via a checkbox toggle. Starts enabled by default. Works only in Object Mode.",
     "location": "View 3D > Sidebar > FastTools",
 }
 
@@ -15,15 +15,18 @@ auto_apply_scale_running = False
 
 def update_auto_apply_scale(self, context):
     global auto_apply_scale_running
-    if self.auto_apply_scale_enabled:
-        if not auto_apply_scale_running:
-            bpy.ops.object.auto_apply_scale('INVOKE_DEFAULT')
+    # Запускаем оператор только если мы в Object Mode
+    if context.mode == 'OBJECT':
+        if self.auto_apply_scale_enabled:
+            if not auto_apply_scale_running:
+                bpy.ops.object.auto_apply_scale('INVOKE_DEFAULT')
+        # Если чекбокс отключён, modal-оператор сам завершится при следующем событии
     else:
-        # Если чекбокс выключен, modal-оператор сам завершится при следующем событии
-        pass
+        # Если не в Object Mode, можно выводить предупреждение или просто ничего не делать
+        self.report({'INFO'}, "Auto Apply Scale работает только в Object Mode")
 
 class AutoApplyScaleOperator(bpy.types.Operator):
-    """Автоматически применяет масштаб после изменения и подтверждения левой кнопкой мыши"""
+    """Автоматически применяет масштаб после подтверждения трансформации (только в Object Mode)"""
     bl_idname = "object.auto_apply_scale"
     bl_label = "Auto Apply Scale"
     bl_options = {'REGISTER'}
@@ -32,12 +35,15 @@ class AutoApplyScaleOperator(bpy.types.Operator):
     _prev_scales = {}
 
     def modal(self, context, event):
-        # Если чекбокс выключен, завершаем modal-оператор
+        # Если не в Object Mode, пропускаем обработку событий
+        if context.mode != 'OBJECT':
+            return {'PASS_THROUGH'}
+
+        # Если чекбокс выключен, отменяем работу оператора
         if not context.scene.auto_apply_scale_enabled:
             self.cancel(context)
             return {'CANCELLED'}
 
-        # При отпускании левой кнопки мыши проверяем изменения масштаба
         if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
             # Сохраняем исходное выделение и активный объект
             original_selection = [obj for obj in context.selected_objects if obj.type == 'MESH']
@@ -50,7 +56,7 @@ class AutoApplyScaleOperator(bpy.types.Operator):
                     changed_objects.append(obj)
                     self._prev_scales[obj.name] = obj.scale.copy()
 
-            # Применяем трансформацию для каждого изменённого объекта
+            # Применяем масштаб для каждого изменённого объекта по отдельности
             for obj in changed_objects:
                 bpy.ops.object.select_all(action='DESELECT')
                 obj.select_set(True)
@@ -67,7 +73,6 @@ class AutoApplyScaleOperator(bpy.types.Operator):
                 context.view_layer.objects.active = original_selection[0]
             return {'PASS_THROUGH'}
 
-        # На событии таймера сохраняем начальные масштабы для выбранных объектов
         elif event.type == 'TIMER':
             for obj in context.selected_objects:
                 if obj.type == 'MESH' and obj.name not in self._prev_scales:
@@ -110,14 +115,14 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.Scene.auto_apply_scale_enabled = bpy.props.BoolProperty(
         name="Auto Apply Scale",
-        description="Если включено, автоматически применять масштаб после трансформации",
-        default=True,  # Чекбокс по умолчанию включен
+        description="Если включено, автоматически применять масштаб после трансформации (только в Object Mode)",
+        default=True,
         update=update_auto_apply_scale
     )
-    # Планируем запуск оператора через 1 секунду после регистрации,
-    # чтобы контекст был полноценным и имел атрибут scene.
+    # Запуск оператора отложено на 1 секунду, если мы в Object Mode
     def auto_start():
-        update_auto_apply_scale(bpy.context.scene, bpy.context)
+        if bpy.context.mode == 'OBJECT':
+            update_auto_apply_scale(bpy.context.scene, bpy.context)
         return None
     bpy.app.timers.register(auto_start, first_interval=1.0)
 
