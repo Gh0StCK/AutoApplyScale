@@ -20,3 +20,8 @@ This Blender addon automatically applies scale to objects after resizing and con
 🔹 **View 3D > Sidebar > FastTools > Auto Apply Scale**  
 
 This addon is especially useful for modeling workflows, eliminating the need to manually press **Ctrl + A → Scale** after each transformation. 🚀
+
+--
+Update 11.04.2026
+
+-Minor fixes to the logic.
