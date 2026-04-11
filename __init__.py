@@ -26,7 +26,6 @@ else:
     from . import constants
 
 from .constants import OBJECT_TYPES
-from .utils import logger
 
 classes = [
     operators.AutoApplyScaleOperator,
@@ -61,13 +60,6 @@ def register():
         default=True
     )
 
-    bpy.types.Scene.auto_apply_debug_logging = bpy.props.BoolProperty(
-        name="Debug Logging",
-        description="Подробные логи работы Auto Apply Scale",
-        default=False,
-        update=utils.update_logging_level
-    )
-    
     # Добавляем свойства для типов объектов
     for obj_type, _, _ in OBJECT_TYPES:
         setattr(bpy.types.Scene, f"auto_apply_{obj_type.lower()}", 
@@ -84,12 +76,11 @@ def register():
                 # Сбрасываем статус текущих запущенных операторов
                 # Это решает проблему с повторным включением аддона
                 utils.reset_auto_apply_scale_status()
-                logger.info("Сброс статуса Auto Apply Scale")
                 
                 # Запускаем оператор
                 utils.update_auto_apply_scale(bpy.context.scene, bpy.context)
-        except Exception as e:
-            logger.error(f"Ошибка автозапуска: {str(e)}")
+        except Exception:
+            pass
         return None
     
     bpy.app.timers.register(auto_start, first_interval=1.0)
@@ -101,7 +92,6 @@ def unregister():
     del bpy.types.Scene.auto_apply_scale_enabled
     del bpy.types.Scene.auto_apply_show_object_types
     del bpy.types.Scene.auto_apply_scale
-    del bpy.types.Scene.auto_apply_debug_logging
     
     # Удаляем свойства для типов объектов
     for obj_type, _, _ in OBJECT_TYPES:

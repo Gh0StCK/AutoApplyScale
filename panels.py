@@ -23,8 +23,6 @@ class AutoApplyScalePanel(bpy.types.Panel):
             box.label(text="Настройки применения масштаба:")
             row = box.row()
             row.prop(scene, "auto_apply_scale", text="Применять масштаб")
-            row = box.row()
-            row.prop(scene, "auto_apply_debug_logging", text="Подробный лог (DEBUG)")
             
             # Типы объектов в виде выпадающего меню
             obj_box = layout.box()

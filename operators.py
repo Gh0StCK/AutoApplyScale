@@ -3,7 +3,7 @@ from typing import Set, Dict, List, Optional, Tuple
 from mathutils import Vector
 from .constants import OBJECT_TYPES, AUTO_APPLY_CONFIRM_EVENTS, AUTO_APPLY_CANCEL_EVENTS
 from . import constants
-from .utils import logger, get_transform_key
+from .utils import get_transform_key
 
 # Категории объектов для операторов
 OBJECT_CATEGORIES = {
@@ -96,9 +96,6 @@ class AutoApplyScaleOperator(bpy.types.Operator):
             self._cached_objects = [obj for obj in selected_objects
                                   if obj.type in selected_types]
             
-            logger.debug(f"Выбранные типы объектов: {selected_types}")
-            logger.debug(f"Отфильтровано объектов: {len(self._cached_objects)} из {len(context.selected_objects)}")
-            
             self._last_selection = current_selection
             self._last_selected_types = selected_types
             self._cleanup_old_data()
@@ -143,7 +140,6 @@ class AutoApplyScaleOperator(bpy.types.Operator):
         obj_name = "<removed object>"
         try:
             if not self._is_object_valid(obj):
-                logger.debug("Пропускаем невалидный объект (удален из сцены)")
                 return
 
             obj_name = obj.name
@@ -155,12 +151,10 @@ class AutoApplyScaleOperator(bpy.types.Operator):
             # Проверяем, что тип объекта включен в настройках
             obj_type = obj.type
             if not getattr(context.scene, f"auto_apply_{obj_type.lower()}", False):
-                logger.debug(f"Пропускаем объект {obj.name} типа {obj_type}, т.к. этот тип отключен в настройках")
                 return
             
             # Проверяем, что масштаб не равен (1.0, 1.0, 1.0)
             if all(abs(s - 1.0) < 1e-6 for s in obj.scale):
-                logger.debug(f"Пропускаем объект {obj.name}, т.к. его масштаб уже равен (1.0, 1.0, 1.0)")
                 return
             
             # Сохраняем текущий статус выделения всех объектов
@@ -186,10 +180,7 @@ class AutoApplyScaleOperator(bpy.types.Operator):
             for o, was_selected in selected_objects.items():
                 o.select_set(was_selected)
             view_layer.objects.active = active_object
-                
-            logger.debug(f"Применен масштаб к объекту: {obj.name}")
         except Exception as e:
-            logger.error(f"Ошибка при применении масштаба к объекту {obj_name}: {str(e)}")
             self.report({'ERROR'}, f"Ошибка применения масштаба: {str(e)}")
 
     def _restore_selection(self, context, original_selection, original_active):
@@ -211,14 +202,9 @@ class AutoApplyScaleOperator(bpy.types.Operator):
         if event.type not in AUTO_APPLY_CONFIRM_EVENTS.union(AUTO_APPLY_CANCEL_EVENTS).union({'TIMER'}):
             return {'PASS_THROUGH'}
 
-        if context.scene.auto_apply_debug_logging:
-            logger.debug("Событие modal: type=%s, value=%s, mode=%s", event.type, event.value, context.mode)
-
         self._update_context_data(context)
         
         if not self._is_object_mode:
-            if context.scene.auto_apply_debug_logging:
-                logger.debug("Пропуск обработки: не Object Mode")
             return {'PASS_THROUGH'}
 
         if not self._context_data['scene'].auto_apply_scale_enabled:
@@ -232,23 +218,15 @@ class AutoApplyScaleOperator(bpy.types.Operator):
                 changed_objects = self._get_changed_objects(context)
                 
                 if changed_objects:
-                    logger.debug(f"Обнаружено {len(changed_objects)} объектов с измененным масштабом")
                     for obj in changed_objects:
                         self._apply_transforms(context, obj)
-                elif context.scene.auto_apply_debug_logging:
-                    logger.debug("Измененных объектов не найдено на событии подтверждения")
                 
                 self._restore_selection(context, [], original_active)
-                    
-                logger.info(f"Применен масштаб к {len(changed_objects)} объектам")
             except Exception as e:
-                logger.error(f"Ошибка в modal: {str(e)}")
                 self.report({'ERROR'}, f"Ошибка: {str(e)}")
             return {'PASS_THROUGH'}
 
         elif event.type in AUTO_APPLY_CANCEL_EVENTS and event.value == 'RELEASE':
-            if context.scene.auto_apply_debug_logging:
-                logger.debug("Получено событие отмены (%s), применение не выполняется", event.type)
             return {'PASS_THROUGH'}
 
         elif event.type == 'TIMER':
@@ -256,7 +234,6 @@ class AutoApplyScaleOperator(bpy.types.Operator):
                 self._save_initial_state(context)
             except ReferenceError as e:
                 # Объект мог быть удален между тиками таймера; чистим кэши и продолжаем.
-                logger.warning("Пойман ReferenceError на TIMER: %s. Кэш обновлен.", str(e))
                 self._cached_objects = [obj for obj in self._cached_objects if self._is_object_valid(obj)]
                 self._cleanup_old_data()
         return {'PASS_THROUGH'}
@@ -275,10 +252,8 @@ class AutoApplyScaleOperator(bpy.types.Operator):
             
             wm.modal_handler_add(self)
             constants.auto_apply_scale_running = True
-            logger.info("Auto Apply Scale запущен")
             return {'RUNNING_MODAL'}
-        except Exception as e:
-            logger.error(f"Ошибка при запуске Auto Apply Scale: {str(e)}")
+        except Exception:
             return {'CANCELLED'}
 
     def cancel(self, context):
@@ -292,7 +267,6 @@ class AutoApplyScaleOperator(bpy.types.Operator):
             self._last_selection.clear()
             self._context_data.clear()
             get_transform_key.cache_clear()
-            logger.info("Auto Apply Scale остановлен")
-        except Exception as e:
-            logger.error(f"Ошибка при остановке: {str(e)}")
+        except Exception:
+            pass
         return {'CANCELLED'}
