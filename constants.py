@@ -15,5 +15,9 @@ OBJECT_TYPES = [
 # Типы трансформаций
 TRANSFORM_TYPES = ('scale',)
 
+# События подтверждения/отмены трансформации в modal-операторе
+AUTO_APPLY_CONFIRM_EVENTS = {'LEFTMOUSE', 'RET', 'NUMPAD_ENTER'}
+AUTO_APPLY_CANCEL_EVENTS = {'RIGHTMOUSE', 'ESC'}
+
 # Глобальные переменные
 auto_apply_scale_running = False 

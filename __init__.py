@@ -5,7 +5,7 @@ bl_info = {
     "blender": (4, 3, 2),
     "category": "Object",
     "author": "Stanislav Kolesnikov",
-    "version": (1, 5, 1),
+    "version": (1, 6, 0),
     "description": "Автоматически применяет масштаб объектов после подтверждения. Работает только в Object Mode.",
     "location": "View 3D > Sidebar > FastTools",
 }
@@ -60,6 +60,13 @@ def register():
         description="Применять масштаб",
         default=True
     )
+
+    bpy.types.Scene.auto_apply_debug_logging = bpy.props.BoolProperty(
+        name="Debug Logging",
+        description="Подробные логи работы Auto Apply Scale",
+        default=False,
+        update=utils.update_logging_level
+    )
     
     # Добавляем свойства для типов объектов
     for obj_type, _, _ in OBJECT_TYPES:
@@ -94,6 +101,7 @@ def unregister():
     del bpy.types.Scene.auto_apply_scale_enabled
     del bpy.types.Scene.auto_apply_show_object_types
     del bpy.types.Scene.auto_apply_scale
+    del bpy.types.Scene.auto_apply_debug_logging
     
     # Удаляем свойства для типов объектов
     for obj_type, _, _ in OBJECT_TYPES:

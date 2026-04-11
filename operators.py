@@ -1,7 +1,7 @@
 import bpy
 from typing import Set, Dict, List, Optional, Tuple
 from mathutils import Vector
-from .constants import OBJECT_TYPES
+from .constants import OBJECT_TYPES, AUTO_APPLY_CONFIRM_EVENTS, AUTO_APPLY_CANCEL_EVENTS
 from . import constants
 from .utils import logger, get_transform_key
 
@@ -66,6 +66,14 @@ class AutoApplyScaleOperator(bpy.types.Operator):
     _is_object_mode: bool = False
     _last_selected_types: Set[str] = set()
 
+    def _is_object_valid(self, obj: bpy.types.Object) -> bool:
+        """Проверяет, что ссылка на объект Blender еще валидна."""
+        try:
+            obj_name = obj.name
+            return obj_name in bpy.data.objects
+        except ReferenceError:
+            return False
+
     def _cleanup_old_data(self):
         """Очищает данные для несуществующих объектов"""
         existing_objects = {obj.name for obj in bpy.data.objects}
@@ -73,15 +81,19 @@ class AutoApplyScaleOperator(bpy.types.Operator):
 
     def _get_objects_to_process(self, context) -> List[bpy.types.Object]:
         """Получает список объектов для обработки с кэшированием"""
-        current_selection = {obj.name for obj in context.selected_objects}
+        selected_objects = [obj for obj in context.selected_objects if self._is_object_valid(obj)]
+        current_selection = {obj.name for obj in selected_objects}
         
         selected_types = {obj_type for obj_type, _, _ in OBJECT_TYPES 
                           if getattr(context.scene, f"auto_apply_{obj_type.lower()}", False)}
 
+        # Всегда чистим кэш от "мертвых" ссылок StructRNA
+        self._cached_objects = [obj for obj in self._cached_objects if self._is_object_valid(obj)]
+
         if current_selection != self._last_selection or selected_types != self._last_selected_types:
             # Получаем список выбранных типов объектов
             # Фильтруем объекты по выбранным типам
-            self._cached_objects = [obj for obj in context.selected_objects 
+            self._cached_objects = [obj for obj in selected_objects
                                   if obj.type in selected_types]
             
             logger.debug(f"Выбранные типы объектов: {selected_types}")
@@ -103,26 +115,38 @@ class AutoApplyScaleOperator(bpy.types.Operator):
     def _save_initial_state(self, context):
         """Сохраняет начальное состояние объектов"""
         for obj in self._get_objects_to_process(context):
-            if obj.name not in self._prev_transforms:
+            if not self._is_object_valid(obj):
+                continue
+            obj_name = obj.name
+            if obj_name not in self._prev_transforms:
                 transforms = {'scale': obj.scale.copy()}
-                self._prev_transforms[obj.name] = transforms
+                self._prev_transforms[obj_name] = transforms
 
     def _get_changed_objects(self, context) -> List[bpy.types.Object]:
         """Возвращает список объектов, у которых изменились трансформации"""
         changed_objects = []
         
         for obj in self._get_objects_to_process(context):
-            prev = self._prev_transforms.get(obj.name, None)
+            if not self._is_object_valid(obj):
+                continue
+            obj_name = obj.name
+            prev = self._prev_transforms.get(obj_name, None)
             if prev is not None and self._has_transform_changed(obj, prev, context):
                 changed_objects.append(obj)
                 transforms = {'scale': obj.scale.copy()}
-                self._prev_transforms[obj.name] = transforms
+                self._prev_transforms[obj_name] = transforms
                     
         return changed_objects
 
     def _apply_transforms(self, context, obj: bpy.types.Object):
         """Применяет трансформации к объекту"""
+        obj_name = "<removed object>"
         try:
+            if not self._is_object_valid(obj):
+                logger.debug("Пропускаем невалидный объект (удален из сцены)")
+                return
+
+            obj_name = obj.name
             view_layer = self._context_data['view_layer']
             
             if not context.scene.auto_apply_scale:
@@ -165,7 +189,7 @@ class AutoApplyScaleOperator(bpy.types.Operator):
                 
             logger.debug(f"Применен масштаб к объекту: {obj.name}")
         except Exception as e:
-            logger.error(f"Ошибка при применении масштаба к объекту {obj.name}: {str(e)}")
+            logger.error(f"Ошибка при применении масштаба к объекту {obj_name}: {str(e)}")
             self.report({'ERROR'}, f"Ошибка применения масштаба: {str(e)}")
 
     def _restore_selection(self, context, original_selection, original_active):
@@ -184,19 +208,24 @@ class AutoApplyScaleOperator(bpy.types.Operator):
 
     def modal(self, context, event):
         # Быстрая проверка на необходимость обработки события
-        if event.type not in {'LEFTMOUSE', 'TIMER'}:
+        if event.type not in AUTO_APPLY_CONFIRM_EVENTS.union(AUTO_APPLY_CANCEL_EVENTS).union({'TIMER'}):
             return {'PASS_THROUGH'}
+
+        if context.scene.auto_apply_debug_logging:
+            logger.debug("Событие modal: type=%s, value=%s, mode=%s", event.type, event.value, context.mode)
 
         self._update_context_data(context)
         
         if not self._is_object_mode:
+            if context.scene.auto_apply_debug_logging:
+                logger.debug("Пропуск обработки: не Object Mode")
             return {'PASS_THROUGH'}
 
         if not self._context_data['scene'].auto_apply_scale_enabled:
             self.cancel(context)
             return {'CANCELLED'}
 
-        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+        if event.type in AUTO_APPLY_CONFIRM_EVENTS and event.value == 'RELEASE':
             try:
                 original_active = self._context_data['view_layer'].objects.active
                 
@@ -206,6 +235,8 @@ class AutoApplyScaleOperator(bpy.types.Operator):
                     logger.debug(f"Обнаружено {len(changed_objects)} объектов с измененным масштабом")
                     for obj in changed_objects:
                         self._apply_transforms(context, obj)
+                elif context.scene.auto_apply_debug_logging:
+                    logger.debug("Измененных объектов не найдено на событии подтверждения")
                 
                 self._restore_selection(context, [], original_active)
                     
@@ -215,8 +246,19 @@ class AutoApplyScaleOperator(bpy.types.Operator):
                 self.report({'ERROR'}, f"Ошибка: {str(e)}")
             return {'PASS_THROUGH'}
 
+        elif event.type in AUTO_APPLY_CANCEL_EVENTS and event.value == 'RELEASE':
+            if context.scene.auto_apply_debug_logging:
+                logger.debug("Получено событие отмены (%s), применение не выполняется", event.type)
+            return {'PASS_THROUGH'}
+
         elif event.type == 'TIMER':
-            self._save_initial_state(context)
+            try:
+                self._save_initial_state(context)
+            except ReferenceError as e:
+                # Объект мог быть удален между тиками таймера; чистим кэши и продолжаем.
+                logger.warning("Пойман ReferenceError на TIMER: %s. Кэш обновлен.", str(e))
+                self._cached_objects = [obj for obj in self._cached_objects if self._is_object_valid(obj)]
+                self._cleanup_old_data()
         return {'PASS_THROUGH'}
 
     def execute(self, context):
