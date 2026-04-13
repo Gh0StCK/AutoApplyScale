@@ -85,10 +85,17 @@ def register():
     
     bpy.app.timers.register(auto_start, first_interval=1.0)
 
+    # Перезапуск оператора после загрузки .blend файла
+    bpy.app.handlers.load_post.append(utils.auto_apply_scale_load_post)
+
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    
+
+    # Удаляем load_post хэндлер
+    if utils.auto_apply_scale_load_post in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(utils.auto_apply_scale_load_post)
+
     del bpy.types.Scene.auto_apply_scale_enabled
     del bpy.types.Scene.auto_apply_show_object_types
     del bpy.types.Scene.auto_apply_scale

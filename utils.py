@@ -1,5 +1,6 @@
 from functools import lru_cache
 import bpy
+from bpy.app.handlers import persistent
 from . import constants
 
 @lru_cache(maxsize=128)
@@ -21,3 +22,25 @@ def update_auto_apply_scale(self, context):
                     bpy.ops.object.auto_apply_scale('INVOKE_DEFAULT')
                 except Exception:
                     pass
+
+@persistent
+def auto_apply_scale_load_post(dummy):
+    """Перезапускает оператор после загрузки .blend файла.
+    
+    При загрузке файла Blender восстанавливает свойства сцены, но не вызывает
+    update-коллбэки BoolProperty, поэтому modal-оператор нужно запускать вручную.
+    """
+    def delayed_start():
+        try:
+            reset_auto_apply_scale_status()
+            scene = bpy.context.scene
+            if (scene
+                    and getattr(scene, 'auto_apply_scale_enabled', False)
+                    and getattr(scene, 'auto_apply_scale', False)):
+                if bpy.context.mode == 'OBJECT':
+                    bpy.ops.object.auto_apply_scale('INVOKE_DEFAULT')
+        except Exception:
+            pass
+        return None  # однократный таймер
+
+    bpy.app.timers.register(delayed_start, first_interval=1.0)
