@@ -5,7 +5,7 @@ bl_info = {
     "blender": (4, 3, 2),
     "category": "Object",
     "author": "Stanislav Kolesnikov",
-    "version": (1, 6, 0),
+    "version": (1, 6, 1),
     "description": "Автоматически применяет масштаб объектов после подтверждения. Работает только в Object Mode.",
     "location": "View 3D > Sidebar > FastTools",
 }
